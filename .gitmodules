@@ -1,0 +1,3 @@
+[submodule "computer-enhance"]
+	path = computer-enhance
+	url = https://github.com/cmuratori/computer_enhance.git
