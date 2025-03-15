@@ -4,9 +4,27 @@
 #include <iostream>
 #include <fstream>
 #include <filesystem>
+#include <bitset>
+#include <array>
+#include <utility> // for std::pair
+#include <tuple>
+#include <assert.h>
+
 // git submodule add <repository_url> <path>
 
 namespace fs = std::filesystem;
+
+// This act as a simgle statement
+#define ASSERT(condition, message) \
+    do { \
+        if (!(condition)) { \
+            std::cerr << "Assertion failed: " << #condition << "\n" \
+                      << "Message: " << message << "\n" \
+                      << "File: " << __FILE__ << "\n" \
+                      << "Line: " << __LINE__ << std::endl; \
+            std::abort(); \
+        } \
+    } while (false)
 
 int main(int argc, char* argv[])
 {
@@ -46,10 +64,10 @@ int main(int argc, char* argv[])
 
     // 4. Create and write to file
     std::string filePath = directoryName + "/" + fileName; // Use + for path concatenation
-    std::ofstream outputFile(filePath);
+    //std::ofstream outputFile(filePath);
 
     // Open the binary file
-    std::ifstream file("example.bin", std::ios::binary);
+    std::ifstream file(filePath, std::ios::binary);
 
     // Check if the file was opened successfully
     if (!file.is_open()) {
@@ -77,9 +95,57 @@ int main(int argc, char* argv[])
     // Close the file
     file.close();
 
-    // Process the binary data (example: print the raw bytes)
-    for (char byte : buffer) {
-        std::cout << std::hex << static_cast<int>(byte) << " ";
+    // If the buffer will see 010001 because little endian, least significant bit at 0 index
+    const std::bitset<6> moveOpcode("100010");
+    const std::bitset<1> d("0"); // source destination
+    std::bitset<1> w("1");
+
+    std::bitset<2> modRegisterToRegister("11");
+    const std::array<std::tuple<std::bitset<3>, std::string, std::string>, 8> registers{{
+		            {std::bitset<3>("000")      ,"AL",      "AX"},
+		            {std::bitset<3>("001")      ,"CL",      "CX"},
+		            {std::bitset<3>("010")      ,"DL",      "DX"},
+		            {std::bitset<3>("011")      ,"BL",      "BX"},
+		            {std::bitset<3>("100")      ,"AH",      "SP"},
+		            {std::bitset<3>("101")      ,"CH",      "BP"},
+		            {std::bitset<3>("110")      ,"DH",      "SI"},
+		            {std::bitset<3>("111")      ,"BH",      "DI"}
+    }};
+
+    // ( Opcode|| d(direction) || (w) word ) ( mod || reg || r/m )
+    std::bitset<2> registerMod("11");
+    
+    printf("BITS 16\n");
+    for (int i = 0; i < buffer.size();i++) {
+        //std::cout << std::hex << static_cast<int>(buffer[i]) << " ";
+        if (i % 2==0) {
+			std::bitset<8> binary(buffer[i]);
+            std::bitset<6> instructionOpcode = (binary.to_ulong() & 0b11111100) >> 2;
+            ASSERT(moveOpcode == instructionOpcode, "This is not a MOV instruction");
+            w = (binary.to_ulong() & 0b00000001);
+        }
+        else {
+            std::bitset<8> binary(buffer[i]);
+            const std::bitset<2> mod = (binary.to_ulong() & 0b11000000) >> 6;
+            std::bitset<3> sourceReg = (binary.to_ulong() & 0b00111000) >> 3;
+            std::bitset<3> desReg = (binary.to_ulong() & 0b00000111);
+            // but assembly instruction is destination source
+            std::string src = "";
+            std::string dst = "";
+            for (const std::tuple<std::bitset<3>
+                , std::string
+                , std::string>&reg 
+                : registers) {
+                auto [regCode, rIfwEqual0, rIfwEqual1] = reg;
+                if (std::get<0>(reg) == sourceReg) {
+                    src = w == std::bitset<1>("0")? rIfwEqual0: rIfwEqual1;
+                }
+                if (std::get<0>(reg) == desReg) {
+                    dst = w == std::bitset<1>("0") ? rIfwEqual0 : rIfwEqual1;
+                }
+            }
+            printf("MOV %s, %s\n", dst.c_str(), src.c_str());
+        }
     }
 
     return 0;
